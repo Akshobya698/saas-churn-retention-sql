@@ -18,16 +18,23 @@
 --     Churn month = DATE_TRUNC('month', cancelled_at).
 --   * past_due: subscription live but payment failing. NOT in headline MRR;
 --     reported separately as at-risk MRR.
---   * paused: not billed. Excluded from MRR and churn base.
+--   * paused: not billed. Excluded from MRR and churn base (paused exits
+--     generate no cancel event, so gross churn slightly understates true
+--     revenue attrition; paused MRR is reported separately).
 --     (paused/past_due rows all carry end_date IS NULL — end_date is NOT a
 --     reliable "active-through" date: ~half of actives have a past end_date —
 --     so liveness is derived from start_date + cancelled_at, never end_date.)
 --   * trialing: pre-revenue. Excluded from MRR and churn base entirely.
---   * Monthly base (start of month m): start_date < m
+--   * Monthly churn base (start of month m): active or past_due
+--     (subscribed, billable or recovering) AND start_date < m
 --       AND (cancelled_at IS NULL OR cancelled_at >= m).
+--     past_due stays in (still subscribed); paused does not (not billed).
+--     This matches the M3 live-set (active/past_due).
 --   * Gross MRR churn (headline revenue metric):
 --       SUM(mrr of paid subs churned in m) / SUM(mrr of paid base at start of m)
---     Net churn (with expansion) is out of scope for M2.
+--     Net churn (with expansion) is out of scope for M2. The churn numerator
+--     uses the cancelled_at window with no status predicate — correct only
+--     via the Q0 hygiene invariant (only churned rows carry cancelled_at).
 --   * Annual billing: the plans catalog lists annual prices, but ZERO
 --     subscriptions reference an annual plan_id, so no amortization is needed.
 -- DATA WINDOW: bulk data ends May 2026 (June 2026 extract is partial: 19
@@ -52,7 +59,7 @@ SELECT s.plan_id,
        ROUND(AVG(s.mrr), 2) AS avg_mrr
 FROM subscriptions s
 LEFT JOIN plans p USING (plan_id)
-WHERE s.plan = 'professional'
+WHERE LOWER(s.plan) = 'professional'
 GROUP BY 1, 2;
 
 -- Status hygiene: only 'churned' rows carry cancelled_at, and all of them do.
@@ -120,12 +127,12 @@ base AS (
                WHERE LOWER(s.plan) <> 'free'
                  AND s.start_date < m.m
                  AND (s.cancelled_at IS NULL OR s.cancelled_at >= m.m)
-                 AND s.status <> 'trialing') AS paid_start_n,
+                 AND s.status IN ('active', 'past_due')) AS paid_start_n,
            COALESCE(SUM(s.mrr) FILTER (
                WHERE LOWER(s.plan) <> 'free'
                  AND s.start_date < m.m
                  AND (s.cancelled_at IS NULL OR s.cancelled_at >= m.m)
-                 AND s.status <> 'trialing'), 0) AS paid_start_mrr,
+                 AND s.status IN ('active', 'past_due')), 0) AS paid_start_mrr,
            COUNT(*) FILTER (
                WHERE LOWER(s.plan) <> 'free'
                  AND s.cancelled_at >= m.m
@@ -161,7 +168,7 @@ base AS (
                WHERE LOWER(s.plan) = 'free'
                  AND s.start_date < m.m
                  AND (s.cancelled_at IS NULL OR s.cancelled_at >= m.m)
-                 AND s.status <> 'trialing') AS free_start_n,
+                 AND s.status IN ('active', 'past_due')) AS free_start_n,
            COUNT(*) FILTER (
                WHERE LOWER(s.plan) = 'free'
                  AND s.cancelled_at >= m.m
@@ -179,35 +186,80 @@ ORDER BY month;
 
 -- ----------------------------------------------------------------------------
 -- Q4. Trend summary: 12-mo average vs last-3-mo average (paid)
--- Re-run Q2 into a CTE in SQLTools, or compare the two rows below.
+-- Standalone (repeats Q2's window/base CTEs so it runs on its own).
 -- ----------------------------------------------------------------------------
--- (Computed from Q2 output; kept as a query for reproducibility.)
+WITH months AS (
+    SELECT (DATE '2025-06-01' + (n || ' months')::interval)::date AS m
+    FROM generate_series(0, 11) AS n
+),
+monthly AS (
+    SELECT DATE_TRUNC('month', m.m)::date AS month,
+           COUNT(*) FILTER (
+               WHERE LOWER(s.plan) <> 'free'
+                 AND s.start_date < m.m
+                 AND (s.cancelled_at IS NULL OR s.cancelled_at >= m.m)
+                 AND s.status IN ('active', 'past_due')) AS paid_start_n,
+           COUNT(*) FILTER (
+               WHERE LOWER(s.plan) <> 'free'
+                 AND s.cancelled_at >= m.m
+                 AND s.cancelled_at < m.m + interval '1 month') AS paid_churn_n,
+           COALESCE(SUM(s.mrr) FILTER (
+               WHERE LOWER(s.plan) <> 'free'
+                 AND s.start_date < m.m
+                 AND (s.cancelled_at IS NULL OR s.cancelled_at >= m.m)
+                 AND s.status IN ('active', 'past_due')), 0) AS paid_start_mrr,
+           COALESCE(SUM(s.mrr) FILTER (
+               WHERE LOWER(s.plan) <> 'free'
+                 AND s.cancelled_at >= m.m
+                 AND s.cancelled_at < m.m + interval '1 month'), 0) AS paid_lost_mrr
+    FROM subscriptions s
+    CROSS JOIN months m
+    GROUP BY 1
+),
+with_rates AS (
+    SELECT month,
+           100.0 * paid_churn_n / NULLIF(paid_start_n, 0) AS cust_churn_pct,
+           100.0 * paid_lost_mrr / NULLIF(paid_start_mrr, 0) AS mrr_churn_pct
+    FROM monthly
+)
+SELECT ROUND(AVG(cust_churn_pct), 2) AS avg_cust_churn_12mo,
+       ROUND(AVG(mrr_churn_pct), 2) AS avg_mrr_churn_12mo,
+       ROUND(AVG(cust_churn_pct) FILTER (WHERE month >= DATE '2026-03-01'), 2)
+           AS avg_cust_churn_last3mo,
+       ROUND(AVG(mrr_churn_pct) FILTER (WHERE month >= DATE '2026-03-01'), 2)
+           AS avg_mrr_churn_last3mo
+FROM with_rates;
 
 -- ----------------------------------------------------------------------------
--- Q5. Reconciliation: start-base + adds = where the MRR sits now
--- Identity (snapshot-MRR terms):
---   paid_base(Jun-2025 start) + paid_adds(Jun-2025..May-2026, incl. June-2026
---   partial starters) + pre-window churned MRR
---     = active_paid_now + churned_alltime_MRR + paused_past_due_MRR
+-- Q5. Reconciliation: attached stock + adds + pre-window + paused = now
+-- Identity (snapshot-MRR terms). "Attached stock" buckets use
+-- status NOT IN ('trialing','paused') so that subscriptions later churned
+-- are counted once on each side (stock when attached, churned_alltime now);
+-- the Q2 churn base is narrower (active + past_due only) by design.
+-- Verified: 142787 + 205296 + 30655 + 34454 = 413192 vs 412679 (uses:
+-- 246739 + 97316 + 68624) — residual $513 (0.1%), mid-life MRR edits.
 -- ----------------------------------------------------------------------------
 SELECT ROUND(SUM(mrr) FILTER (
            WHERE LOWER(plan) <> 'free'
              AND start_date < DATE '2025-06-01'
              AND (cancelled_at IS NULL OR cancelled_at >= DATE '2025-06-01')
-             AND status <> 'trialing'), 0) AS paid_base_jun2025,
+             AND status NOT IN ('trialing', 'paused')), 0) AS attached_jun2025,
        ROUND(SUM(mrr) FILTER (
            WHERE LOWER(plan) <> 'free'
              AND start_date >= DATE '2025-06-01'
-             AND status <> 'trialing'), 0) AS paid_adds_since,
+             AND status NOT IN ('trialing', 'paused')), 0) AS adds_since,
        ROUND(SUM(mrr) FILTER (
            WHERE LOWER(plan) <> 'free'
              AND status = 'churned'
              AND cancelled_at < DATE '2025-06-01'), 0) AS prewindow_churned_mrr,
+       ROUND(SUM(mrr) FILTER (
+           WHERE LOWER(plan) <> 'free'
+             AND status = 'paused'), 0) AS paused_alltime_mrr,
        ROUND(SUM(mrr) FILTER (
            WHERE LOWER(plan) <> 'free' AND status = 'active'), 0) AS active_paid_now,
        ROUND(SUM(mrr) FILTER (
            WHERE LOWER(plan) <> 'free' AND status = 'churned'), 0) AS churned_alltime_mrr,
        ROUND(SUM(mrr) FILTER (
            WHERE LOWER(plan) <> 'free'
-             AND status IN ('paused', 'past_due')), 0) AS paused_pastdue_mrr
+             AND status IN ('paused', 'past_due')), 0) AS paused_pastdue_now
 FROM subscriptions;

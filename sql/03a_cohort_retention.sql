@@ -25,9 +25,11 @@
 --     complete data month) are NULL -> the heatmap's empty bottom-right.
 --   * Free-only companies (44, never held a paid sub) are outside this table;
 --     free cancellation churn (~2%/mo, M2) understates abandonment anyway.
--- VALIDATION: collapsing this table's churned counts by calendar month
---   reproduces the M2 Q2 paid_churn_n trend (company-grain level is lower
---   because multi-subscription companies survive single-sub cancels).
+-- VALIDATION (Q4): collapsing churned counts by calendar month reproduces
+--   the M2 Q2 paid_churn_n series exactly at subscription grain; company
+--   grain differs once (Oct-2025: 12 vs 13). Churn is whole-company loss,
+--   so the company grain loses nothing. M2's churn base (active + past_due)
+--   matches this table's live-set by design.
 -- ============================================================================
 
 SET search_path TO saas;
@@ -140,3 +142,21 @@ FROM (
     SELECT cohort, month_offset, cohort_size, n_active FROM per_cell
 ) t
 ORDER BY cohort, month_offset;
+
+-- ----------------------------------------------------------------------------
+-- Q4. Validation: collapsing this table by calendar month reproduces the M2
+-- Q2 paid_churn_n trend. Verified: sub_churns matches M2 exactly every month
+-- (15,9,16,11,13,12,13,12,16,23,23,33); co_churns differs once (Oct-2025:
+-- 12 vs 13) — one company losing one of several subs. Churn is whole-company
+-- loss, so the company grain loses nothing.
+-- ----------------------------------------------------------------------------
+SELECT DATE_TRUNC('month', s.cancelled_at)::date AS month,
+       COUNT(*) AS sub_churns,
+       COUNT(DISTINCT s.account_id) AS co_churns
+FROM subscriptions s
+WHERE s.status = 'churned'
+  AND LOWER(s.plan) <> 'free'
+  AND s.cancelled_at >= DATE '2025-06-01'
+  AND s.cancelled_at < DATE '2026-06-01'
+GROUP BY 1
+ORDER BY 1;

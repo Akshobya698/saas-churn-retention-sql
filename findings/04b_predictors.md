@@ -53,8 +53,10 @@ Post-onboarding heartbeat metrics (login recency in months 2–3), seat
 expansion, and any in-product survey or NPS — plus a holdout test of the
 36%-rule on 2025-06+ cohorts before anyone wires it to a save-desk trigger.
 Correlation here is strong and actionable, but the causal claim ("invites
-*saves* accounts") still needs an experiment — which is exactly what M4's
-sibling data (the 2025 trial-length and onboarding-checklist experiments)
-could supply next.
+*saves* accounts") still needs an experiment — the database already holds the
+raw material (`saas.experiments` has 2025 trial-length and onboarding-checklist
+trials with `experiment_assignments`), which a follow-up can join to churn
+outcomes. Baseline note: 23.5% is the whole-population churn rate (71/302);
+20.5% is the quiet-segment rate used as the comparison baseline.
 
 ![Churned vs retained onboarding behaviour](../figures/predictor_comparison.png)

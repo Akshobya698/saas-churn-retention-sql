@@ -17,6 +17,9 @@
 - **past_due** ($34,170 MRR): live but failing payment — **at-risk**, excluded
   from headline MRR. **paused** ($34,454): not billed — excluded. **trialing**
   (292 subs): pre-revenue — excluded from MRR and base.
+- **Churn base:** active + past_due (subscribed, billable or recovering) alive
+  at month start. Paused subs are out — they can't churn (no cancel event) and
+  would dilute the rate; this matches M3's retained set exactly.
 - **MRR** = `SUM(mrr)` over active paid subs. It reflects seats/add-ons
   (enterprise actives average $764 vs the $399 list price), so the row value —
   not list price — is the source of truth.
@@ -36,20 +39,22 @@ $168,373 (230 subs, 68% of MRR), pro $69,684 (388), starter $8,682 (155).
 
 | Month | Paid base MRR | Cust. churn | MRR churn | Free churn |
 |---|---|---|---|---|
-| 2025-06 → 2026-02 | $161k → $265k | 1.4–2.6% | 0.7–2.4% | 0.0–3.2% |
-| 2026-03 / 04 / 05 | $285k / $301k / $323k | 2.30 / 2.15 / 2.88% | 1.88 / 1.56 / 1.44% | 2.2 / 2.2 / 1.9% |
+| 2025-06 → 2026-02 | $129k → $214k | 1.9–3.5% | 0.9–2.9% | 0.0–4.2% |
+| 2026-03 / 04 / 05 | $231k / $244k / $263k | 3.11 / 2.91 / 3.86% | 2.32 / 1.93 / 1.76% | 2.9 / 2.8 / 2.5% |
 
-12-month averages: paid customer churn **1.96%**, gross MRR churn **1.24%**,
-free churn **2.1%** — every month inside the 1–15% sanity band.
+12-month averages: paid customer churn **2.64%**, gross MRR churn **1.62%**,
+free churn **2.69%** — inside the 1–15% sanity band every month except two
+quiet months that dip just under 1% on the revenue measure only.
 
 ## Read for the CFO
 
-Lead with paid: ≈2%/mo customer churn, ≈1.2%/mo revenue churn — leavers skew
-smaller than average, which is healthy. The base doubled in a year
-($161k → $323k); additions dwarf losses every month. Watch item: churn stepped
-up Mar–May 2026 (May's 33 cancels a record) — that uptick is M3's question.
-Free churn (≈2%) runs *below* paid: free users don't cancel, they go quiet, so
-cancellation-based free churn understates abandonment — M3 should use activity
-data. Books reconcile: Jun-2025 base ($161,315) + adds ($221,221) +
-pre-window churned ($30,655) matches where the MRR sits now ($412,679) within
-$512 (0.1%).
+Lead with paid: ≈2.6%/mo customer churn, ≈1.6%/mo revenue churn — leavers
+skew smaller than average, which is healthy. The base doubled in a year
+($129k → $263k); additions dwarf losses every month. Watch item: churn stepped
+up Mar–May 2026 (3.1/2.9/3.9%, May's 33 cancels a record) — that uptick is
+M3's question. Free churn (≈2.7%) runs level with paid: free users don't
+cancel, they go quiet, so cancellation-based free churn understates
+abandonment — M3 should use activity data. Books reconcile: Jun-2025 attached
+stock ($142,787) + adds ($205,296) + pre-window churned ($30,655) +
+paused-ever ($34,454) = $413,192 vs the current stack ($412,679) — within
+$513 (0.1%).

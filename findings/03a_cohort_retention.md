@@ -43,7 +43,7 @@ from 2025-12, itself the largest cohort on record.
   account with it, so the company grain loses nothing.
 - **Gates:** month 0 is 100.0% for all 51 cohorts, no cell exceeds 100%, and
   the empty bottom-right triangle is exactly the unelapsed future.
-  Free-only companies (44) are excluded: cancellation-based free churn (~2%/mo
-  in M2) understates abandonment and would flatter the picture.
+  Free-only companies (44) are excluded: cancellation-based free churn
+  (~2.7%/mo in M2) understates abandonment and would flatter the picture.
 
 ![Paid company retention by activation cohort](../figures/cohort_heatmap.png)

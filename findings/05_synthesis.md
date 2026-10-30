@@ -55,7 +55,7 @@ compose into a pipeline, with M4 first.
 
 1. This week: CS pulls the 18-company watchlist and runs invite-assist
    outreach; log outcomes against the 20.5% baseline.
-2. Next cohort review: re-run `notebooks/04b_predictors.ipynb` on 2025-06+
+2. Next cohort review: re-run `../notebooks/04b_predictors.ipynb` on 2025-06+
    starters as a holdout before automating the trigger.
 3. This quarter: product prototypes one first-week activation milestone (the
    M3 cliff says week 1, not month 1, is where the decision happens), with
